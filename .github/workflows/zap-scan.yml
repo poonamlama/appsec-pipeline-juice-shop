@@ -33,9 +33,5 @@ jobs:
         with:
           target: 'http://localhost:3000'
           fail_action: false   # don't fail the whole pipeline yet; just report findings
-
-      - name: Upload ZAP report
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-report
-          path: report_html.html
+          # This action automatically uploads its own report as an artifact
+          # named "zap_scan", so no separate upload step is needed.
