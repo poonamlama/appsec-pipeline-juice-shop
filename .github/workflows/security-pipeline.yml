@@ -58,7 +58,12 @@ jobs:
         run: git clone --depth 1 https://github.com/juice-shop/juice-shop.git juice-shop-src
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pinned to 0.35.0 specifically: in March 2026, attackers compromised
+        # credentials and pushed malicious code to nearly every other tagged
+        # version of this action (0.0.1-0.34.2). 0.35.0 is a confirmed-safe
+        # version. Always check an action's security advisories before
+        # trusting a tag, especially "@master" or "@latest".
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'fs'
           scan-ref: 'juice-shop-src'
