@@ -1,0 +1,101 @@
+name: Security Pipeline - DAST, SAST, SCA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dast_scan:
+    name: DAST - OWASP ZAP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start Juice Shop
+        run: |
+          docker run -d --name juice-shop -p 3000:3000 bkimminich/juice-shop
+          echo "Waiting for Juice Shop to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:3000 > /dev/null; then
+              echo "Juice Shop is up!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Make report folder writable
+        run: mkdir -p zap-report && chmod -R 777 zap-report
+
+      - name: Run ZAP Baseline Scan directly via Docker
+        run: |
+          docker run --rm \
+            --network host \
+            -v $(pwd)/zap-report:/zap/wrk:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://localhost:3000 \
+            -r zap-report.html \
+            -J zap-report.json \
+            -I
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap-report/
+
+  sca_scan:
+    name: SCA - Trivy (dependency scan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Juice Shop source
+        run: git clone --depth 1 https://github.com/juice-shop/juice-shop.git juice-shop-src
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'juice-shop-src'
+          format: 'json'
+          output: 'trivy-report.json'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'   # report findings without failing the pipeline
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+
+  sast_scan:
+    name: SAST - Semgrep (code scan)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout Juice Shop source
+        run: git clone --depth 1 https://github.com/juice-shop/juice-shop.git juice-shop-src
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config=auto \
+            --json \
+            --output=semgrep-report.json \
+            juice-shop-src || true
+        # "|| true" keeps this step from failing the pipeline just because
+        # findings were reported; we want to see results, not block on them.
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep-report.json
